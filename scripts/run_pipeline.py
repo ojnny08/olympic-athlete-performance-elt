@@ -1,70 +1,9 @@
-from pathlib import Path
 import pandas as pd
-import numpy as np
 from sqlalchemy import create_engine
 import urllib
 
-def load_data():
-    athletes = pd.read_csv('../data/processed/athletes.csv')
-    results = pd.read_csv('../data/processed/results.csv')
-    return results.merge(athletes, on='athlete_id')
-
-def age_group(df_master):
-    df_master['Age'] = df_master['Games_Year'] - df_master['Born_year']
-    df_master['Age'] = pd.to_numeric(df_master['Age'], errors='coerce')
-
-    # Group them accordingly
-    age_bin = [13, 20, 30, 40, 50, 60, 70, 80]
-
-    age_groups = np.array(['11-12', '13-19', '20-29', '30-39', '40-49', '50-59', '60-69', '70-79'])
-
-    index = np.digitize(df_master['Age'].fillna(-1), age_bin)
-
-    df_master['Age_group'] = age_groups[index]
-
-    # For the NA ages change the gorup to unknown
-    df_master.loc[df_master['Age'].isna(), 'Age_group'] = 'Unknown'
-    return df_master
-
-def podium_appearance_age(df_master):
-    df_podium = df_master.groupby(['Games_Year', 'Age_group']).agg({
-        'athlete_id' : 'count',
-        'Medal' : 'count'
-    }).reset_index()
-
-    df_podium['Appearance_%'] = ((df_podium['Medal'] / df_podium['athlete_id']) * 100).round(2)
-
-    df_podium = df_podium.rename(columns={
-        'Games_Year': 'Year',
-        'athlete_id': 'Total_Athletes',
-        'Medal': 'Podium_Appearance',
-    })
-
-    df_podium.to_csv('./clean-data/podium_appearances_age.csv', index=False)
-    print('Podium appearance age updated')
-
-def physical_preformance(df_master):
-    df_physcial = df_master.groupby(['Games_Year', 'Discipline_clean', 'Preformance_Result']).agg({
-        'height_cm': ['mean', 'std'],
-        'weight_kg': ['mean', 'std']
-    }).reset_index()
-
-    df_physcial.to_csv('./clean-data/physical_preformance.csv', index=False)
-    print('Physical preformance updated')
-
-def year_total_points(df_master):
-    df_total_points = df_master.groupby(['Games_Year', 'Age_group'])['Points'].sum().reset_index()
-
-    df_total_points.to_csv('./clean-data/year_total_points.csv', index=False)
-    
-def load_to_sql(df, table_name, engine):
-
-    print(f"Loading {table_name}...")
-    try:
-        df.to_sql(table_name, con=engine, if_exists='replace', index=False)
-        print(f"Table {table_name} successfully loaded to SQL Server")
-    except Exception as e:
-        print(f"Error loading to SQL: {e}")
+from cleaning import clean_athletes, clean_results
+from transformations import age_group, physical_preformance, podium_appearance_age, year_total_points
 
 def engine():
     connection_string = (
@@ -79,37 +18,64 @@ def engine():
 
     params = urllib.parse.quote_plus(connection_string)
 
-    return create_engine(
-        f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
+    return create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
+
+def initial_load_to_sql(engine):
+    table = {
+        'athletes': '../data/raw/athletes.csv',
+        'results': '../data/raw/results.csv'
+    }
+
+    for table, file_path in table.items():
+        print(f"Loading {table}...")
+        try:
+            df = pd.read_csv(file_path)
+            df.to_sql(table, con=engine, if_exists='replace', index=False)
+            print(f"Successfully loaded {table} to Docker.")
+        except Exception as e:
+            print(f"Failed loading {table} to Docker: {e}")
+
+def load_data(engine):
+    df_athletes = pd.read_sql_table('athletes', engine)
+    df_results = pd.read_sql_table("results", engine)
+
+    athletes = clean_athletes(df_athletes)
+    results = clean_results(df_results)
+
+    columns = ['athlete_id','height_cm', 'weight_kg', 'Born_year', 'Death_year', 'Country']
+    merge = results.merge(athletes[columns], on='athlete_id', how='left')
+    return merge
+
+def load_to_sql(df, table_name, engine):
+
+   print(f"Loading {table_name}...")
+   try:
+       df.to_sql(table_name, con=engine, if_exists='replace', index=False)
+       print(f"Table {table_name} successfully loaded to SQL Server")
+   except Exception as e:
+       print(f"Error loading to SQL: {e}")
+
 
 if __name__ == "__main__":
-    master = load_data()
-    age_group(master)
-    podium_appearance_age(master)
-    physical_preformance(master)
-    year_total_points(master)
 
     db_engine = engine()
 
-    files_to_load = {
-        'athletes.csv': 'athletes',
-        'results.csv': 'results',
-        'master.csv': 'master',
-        'physical_preformance.csv': 'physical_preformance',
-        'podium_appearances_age.csv': 'podium_appearances_age',
-        'year_total_points.csv': 'year_total_points',
+    #initial_load_to_sql(db_engine)
+    
+    merge = load_data(db_engine)
+    master = age_group(merge)
+    podium_df = podium_appearance_age(master)
+    physical_df = physical_preformance(master)
+    points_df = year_total_points(master)
+
+    table_save = {
+        'Master_table': master,
+        'podium_appearance_age': podium_df,
+        'physical_preformance': physical_df,
+        'year_total_points': points_df,
     }
 
-    for file, table_name in files_to_load.items():
-        try:
-            BASE_DIR = Path(__file__).resolve().parent.parent/ "data" / "processed"
-
-            df = pd.read_csv(BASE_DIR / file)
-            load_to_sql(df, table_name, db_engine)
-
-        except FileNotFoundError:
-            print(f"{table_name} not found")
-        except Exception as e:
-            print(f"Failed to load {table_name}: {e}")
+    for table_name, df in table_save.items():
+        load_to_sql(df, table_name, db_engine)
 
     print('Pipeline execution complete')
