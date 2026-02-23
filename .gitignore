@@ -1,5 +1,4 @@
 env/
-data/raw/
 data/processed/
 clean-data/
 *.ipynb_checkpoints/
