@@ -1,4 +1,4 @@
-# 🏅 Athlete Performance Analytics Pipeline
+# Athlete Performance Analytics Pipeline
 
 ## Overview
 This is an end-to-end data pipeline built to clean and migrate Olympic athlete data. It started as a local migration project into a **Dockerized SQL Server** using **Pandas** and is currently being scaled into a production-level **Big Data** environment.
@@ -46,7 +46,3 @@ Moving the logic to **PySpark** to run on a **Docker-Hadoop** cluster. This tran
 * `data/` - Raw and cleaned CSV samples
 
 ---
-
-## Notes
-* Pandas works great until the data hits your RAM limit. By using PySpark and Hadoop, it prepares this pipeline for actual large-scale athlete datasets.
-* Data is loaded into tables to make it ready for analysis in Tableau.

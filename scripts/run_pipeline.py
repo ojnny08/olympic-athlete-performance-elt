@@ -1,17 +1,23 @@
-import pandas as pd
+import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 import urllib
+from pathlib import Path
+import pandas as pd
+from scripts.spark_builder import spark
+
 
 from cleaning import clean_athletes, clean_results
 from transformations import age_group, physical_preformance, podium_appearance_age, year_total_points
 
 def engine():
+    db_password = os.getenv("DB_PASSWORD")
     connection_string = (
         "DRIVER={ODBC Driver 17 for SQL Server};"
         "SERVER=localhost,1433;"
         "DATABASE=Olympic_Data;"
         "UID=sa;"
-        "PWD=Admin@123;"
+        f"PWD={db_password};"
         "Encrypt=yes;"
         "TrustServerCertificate=yes;"
     )
@@ -55,9 +61,19 @@ def load_to_sql(df, table_name, engine):
    except Exception as e:
        print(f"Error loading to SQL: {e}")
 
+def load_to_hadoop(df, file_name):
+    try:
+        df.write.mode('overwrite').parquet(f"hdfs:///data/clean/{file_name}")
+    except Exception as e:
+       print(f"Error loading to Hadoop: {e}")
+    
+
 
 if __name__ == "__main__":
-
+    
+    env_path = Path(__file__).resolve().parent.parent / '.env'
+    load_dotenv(dotenv_path=env_path)
+    
     db_engine = engine()
 
     #initial_load_to_sql(db_engine)
@@ -77,5 +93,6 @@ if __name__ == "__main__":
 
     for table_name, df in table_save.items():
         load_to_sql(df, table_name, db_engine)
+        load_to_hadoop(df, table_name)
 
     print('Pipeline execution complete')
