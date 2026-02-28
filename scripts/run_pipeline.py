@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 import urllib
 from pathlib import Path
 import pandas as pd
-from scripts.spark_builder import spark
+#from scripts.spark_builder import spark
 
 
 from cleaning import clean_athletes, clean_results
@@ -41,16 +41,38 @@ def initial_load_to_sql(engine):
         except Exception as e:
             print(f"Failed loading {table} to Docker: {e}")
 
+def read_query(file_path):
+    with open(file_path, 'r') as file:
+        query = file.read()
+    return query
+
 def load_data(engine):
-    df_athletes = pd.read_sql_table('athletes', engine)
-    df_results = pd.read_sql_table("results", engine)
+    athletes_path = ('../queries/athletes_query.sql')
+    results_path = ('../queries/results_query.sql')
+
+    read_athletes = read_query(athletes_path)
+    read_results = read_query(results_path)
+
+    df_athletes = pd.read_sql(read_athletes, engine)
+    df_results = pd.read_sql(read_results, engine)
 
     athletes = clean_athletes(df_athletes)
     results = clean_results(df_results)
 
+    clean_table = {
+        'athletes_clean': athletes,
+        'results_clean': results
+    }
+    table_loop(clean_table, engine)
     columns = ['athlete_id','height_cm', 'weight_kg', 'Born_year', 'Death_year', 'Country']
+
     merge = results.merge(athletes[columns], on='athlete_id', how='left')
     return merge
+
+def table_loop(dic, engine):
+    for table_name, df in dic.items():
+        load_to_sql(df, table_name, engine)
+        load_to_hadoop(df, table_name)
 
 def load_to_sql(df, table_name, engine):
 
@@ -73,7 +95,7 @@ if __name__ == "__main__":
     
     env_path = Path(__file__).resolve().parent.parent / '.env'
     load_dotenv(dotenv_path=env_path)
-    
+
     db_engine = engine()
 
     #initial_load_to_sql(db_engine)
@@ -91,8 +113,7 @@ if __name__ == "__main__":
         'year_total_points': points_df,
     }
 
-    for table_name, df in table_save.items():
-        load_to_sql(df, table_name, db_engine)
-        load_to_hadoop(df, table_name)
+    table_loop(table_save, db_engine)
+        
 
     print('Pipeline execution complete')
