@@ -64,15 +64,17 @@ def load_data(engine):
         'results_clean': results
     }
     table_loop(clean_table, engine)
-    columns = ['athlete_id','height_cm', 'weight_kg', 'Born_year', 'Death_year', 'Country']
 
-    merge = results.merge(athletes[columns], on='athlete_id', how='left')
+    master_path = ('../queries/master_query.sql')
+    read_master = read_query(master_path)
+    merge = pd.read_sql(read_master, engine)
+
     return merge
 
 def table_loop(dic, engine):
     for table_name, df in dic.items():
         load_to_sql(df, table_name, engine)
-        load_to_hadoop(df, table_name)
+        #load_to_hadoop(df, table_name)
 
 def load_to_sql(df, table_name, engine):
 

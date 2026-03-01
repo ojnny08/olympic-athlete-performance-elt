@@ -19,28 +19,33 @@ def age_group(df_merge):
 
 def podium_appearance_age(df_merge):
    df_podium = df_merge.groupby(['Games_Year', 'Age_group']).agg({
-       'athlete_id' : 'count',
-       'Medal' : 'count'
+       'athlete_id' : 'size', 
+       'Medal' : 'size'
    }).reset_index()
-
-   df_podium['Appearance_%'] = ((df_podium['Medal'] / df_podium['athlete_id']) * 100).round(2)
 
    df_podium = df_podium.rename(columns={
        'Games_Year': 'Year',
        'athlete_id': 'Total_Athletes',
        'Medal': 'Podium_Appearance',
    })
+
+   df_podium['Appearance_%'] = ((df_podium['Podium_Appearance'] / df_podium['Total_Athletes']) * 100).round(2)
+
    print('Podium appearance age updated')
    return df_podium
 
 def physical_preformance(df_merge):
-   df_physcial = df_merge.groupby(['Games_Year', 'Discipline_clean', 'Preformance_Result']).agg({
+   df_physical = df_merge.groupby(['Games_Year', 'Discipline_clean', 'Preformance_Result']).agg({
        'height_cm': ['mean', 'std'],
        'weight_kg': ['mean', 'std']
-   }).reset_index()
+   })
+
+   df_physical.columns = ['_'.join(col).strip() for col in df_physical.columns.values]
+
+   df_physical = df_physical.reset_index()
 
    print('Physical preformance updated')
-   return df_physcial
+   return df_physical
 
 def year_total_points(df_merge):
    df_total_points = df_merge.groupby(['Games_Year', 'Age_group'])['Points'].sum().reset_index()

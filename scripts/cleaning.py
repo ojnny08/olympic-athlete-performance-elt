@@ -3,6 +3,7 @@ import pandas as pd
 def clean_athletes(df_athletes):
     # Apply notebook cleaning
     df_athletes['Name'] = df_athletes['Used name'].str.replace('•', ' ')
+    df_athletes['Name'] = df_athletes['Name'].str.replace('-', ' ')
 
     df_athletes['height_cm'] = df_athletes['Measurements'].str.extract(r'(\d+)\s*cm')
     df_athletes['weight_kg'] = df_athletes['Measurements'].str.extract(r'(\d+)\s*kg')
