@@ -1,3 +1,4 @@
+use Olympic_Data;
 select
     [height_cm],
     [weight_kg],
