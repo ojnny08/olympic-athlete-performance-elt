@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 import urllib
 from pathlib import Path
 import pandas as pd
-#from scripts.spark_builder import spark
+import awswrangler as wr
 
 
 from cleaning import clean_athletes, clean_results
@@ -26,71 +26,60 @@ def engine():
 
     return create_engine(f"mssql+pyodbc:///?odbc_connect={params}", fast_executemany=True)
 
-def initial_load_to_sql(engine):
-    table = {
-        'athletes': '../data/raw/athletes.csv',
-        'results': '../data/raw/results.csv'
-    }
-
-    for table, file_path in table.items():
-        print(f"Loading {table}...")
-        try:
-            df = pd.read_csv(file_path)
-            df.to_sql(table, con=engine, if_exists='replace', index=False)
-            print(f"Successfully loaded {table} to Docker.")
-        except Exception as e:
-            print(f"Failed loading {table} to Docker: {e}")
-
-def read_query(file_path):
-    with open(file_path, 'r') as file:
-        query = file.read()
-    return query
 
 def load_data(engine):
-    athletes_path = ('../queries/athletes_query.sql')
-    results_path = ('../queries/results_query.sql')
+    athlena_db = os.getenv('ATHENA_DATABASE')
+    s3_output = os.getenv('ATHENA_S3_OUTPUT')
 
-    read_athletes = read_query(athletes_path)
-    read_results = read_query(results_path)
+    print("reading tables")
+    df_athletes = wr.athena.read_sql_query(
+        sql='SELECT * FROM athletes_v2',
+        database=athlena_db,
+        s3_output=s3_output,
+        ctas_approach=False
+    )
+    
+    df_results = wr.athena.read_sql_query(
+        sql='SELECT * FROM results_v2;',
+        database=athlena_db,
+        s3_output=s3_output,
+        ctas_approach=False
+    )
 
-    df_athletes = pd.read_sql(read_athletes, engine)
-    df_results = pd.read_sql(read_results, engine)
-
-    athletes = clean_athletes(df_athletes)
-    results = clean_results(df_results)
+    df_athletes = clean_athletes(df_athletes)
+    df_results = clean_results(df_results)
 
     clean_table = {
-        'athletes_clean': athletes,
-        'results_clean': results
+        'athletes_clean': df_athletes,
+        'results_clean': df_results
     }
     table_loop(clean_table, engine)
 
-    master_path = ('../queries/master_query.sql')
-    read_master = read_query(master_path)
-    merge = pd.read_sql(read_master, engine)
+    df_merge = pd.merge(df_results, df_athletes, on='athlete_id')
 
-    return merge
+    return df_merge
 
 def table_loop(dic, engine):
+    clean_bucket = os.getenv('S3_BUCKET_CLEAN')
     for table_name, df in dic.items():
         load_to_sql(df, table_name, engine)
-        #load_to_hadoop(df, table_name)
+        load_to_s3(df, table_name, clean_bucket)
 
 def load_to_sql(df, table_name, engine):
-
-   print(f"Loading {table_name}...")
+   print(f"Loading {table_name}")
    try:
        df.to_sql(table_name, con=engine, if_exists='replace', index=False)
-       print(f"Table {table_name} successfully loaded to SQL Server")
+       print(f"Table {table_name} loaded to sql server")
    except Exception as e:
-       print(f"Error loading to SQL: {e}")
+       print(f"Error loading to sql {e}")
 
-def load_to_hadoop(df, file_name):
+def load_to_s3(df, table_name, bucket):
+    print(f"Loading {table_name}")
     try:
-        df.write.mode('overwrite').parquet(f"hdfs:///data/clean/{file_name}")
+        path = f"s3://{bucket}/{table_name}"
+        wr.s3.to_parquet(df=df, path=path)
     except Exception as e:
-       print(f"Error loading to Hadoop: {e}")
-    
+        print(f"Error loading to s3 {e}")
 
 
 if __name__ == "__main__":
@@ -99,9 +88,8 @@ if __name__ == "__main__":
     load_dotenv(dotenv_path=env_path)
 
     db_engine = engine()
-
-    #initial_load_to_sql(db_engine)
     
+    print("beginning")
     merge = load_data(db_engine)
     master = age_group(merge)
     podium_df = podium_appearance_age(master)

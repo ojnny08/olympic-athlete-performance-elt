@@ -4,3 +4,5 @@ data/processed/
 clean-data/
 *.ipynb_checkpoints/
 __pycache__/
+docker-hadoop/
+scripts/spark_builder.py
