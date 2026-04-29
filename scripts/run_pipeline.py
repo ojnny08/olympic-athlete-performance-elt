@@ -53,17 +53,25 @@ def load_data(engine):
         'athletes_clean': df_athletes,
         'results_clean': df_results
     }
-    table_loop(clean_table, engine)
+    table_loop_clean(clean_table, engine)
 
     df_merge = pd.merge(df_results, df_athletes, on='athlete_id')
 
     return df_merge
 
-def table_loop(dic, engine):
+def table_loop_clean(dic, engine):
     clean_bucket = os.getenv('S3_BUCKET_CLEAN')
+    folder = 'clean'
     for table_name, df in dic.items():
-        load_to_sql(df, table_name, engine)
-        load_to_s3(df, table_name, clean_bucket)
+        #load_to_sql(df, table_name, engine)
+        load_to_s3(df, table_name, clean_bucket, folder)
+
+def table_loop_transformed(dic, engine):
+    clean_bucket = os.getenv('S3_BUCKET_CLEAN')
+    folder = 'transformed'
+    for table_name, df in dic.items():
+        #load_to_sql(df, table_name, engine)
+        load_to_s3(df, table_name, clean_bucket, folder)
 
 def load_to_sql(df, table_name, engine):
    print(f"Loading {table_name}")
@@ -73,10 +81,10 @@ def load_to_sql(df, table_name, engine):
    except Exception as e:
        print(f"Error loading to sql {e}")
 
-def load_to_s3(df, table_name, bucket):
+def load_to_s3(df, table_name, bucket, folder):
     print(f"Loading {table_name}")
     try:
-        path = f"s3://{bucket}/{table_name}"
+        path = f"s3://{bucket}/{folder}/{table_name}"
         wr.s3.to_parquet(df=df, path=path)
     except Exception as e:
         print(f"Error loading to s3 {e}")
@@ -103,7 +111,7 @@ if __name__ == "__main__":
         'year_total_points': points_df,
     }
 
-    table_loop(table_save, db_engine)
+    table_loop_transformed(table_save, db_engine)
         
 
     print('Pipeline execution complete')
